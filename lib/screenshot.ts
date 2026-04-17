@@ -14,7 +14,9 @@ export async function captureScreenshots(urls: string[], options: ScreenshotOpti
   
   await fs.mkdir(tempDir, { recursive: true });
 
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process'],
+  });
   const results: string[] = [];
 
   try {

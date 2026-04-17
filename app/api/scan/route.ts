@@ -56,7 +56,12 @@ export async function POST(req: NextRequest) {
           // Cleanup
           await fs.rm(tempDir, { recursive: true, force: true }).catch(console.error);
         } catch (error: any) {
-          sendProgress({ status: 'error', message: error.message || 'An error occurred during scan' });
+          console.error('Scan Error:', error);
+          let userMessage = error.message || 'An error occurred during scan';
+          if (error.message.includes('Executable doesn\'t exist')) {
+            userMessage = 'Server Error: Playwright browser not found. Try running "npx playwright install chromium" on the server.';
+          }
+          sendProgress({ status: 'error', message: userMessage });
         } finally {
           controller.close();
         }
