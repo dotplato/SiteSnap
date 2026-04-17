@@ -89,7 +89,7 @@ export default function Home() {
         {/* Header */}
         <div className="text-center space-y-2">
           <h1 className="text-4xl font-bold tracking-tight text-slate-900 sm:text-6xl">
-            SiteSnap <span className="text-gray-600 text-xs sm:text-xs">(by Ammar)</span>
+            SiteSnap <span className="text-gray-600 text-xs sm:text-xs">( by Ammar )</span>
           </h1>
           <p className="text-lg text-slate-600">
             just spit it out and take all those screenshots man!
