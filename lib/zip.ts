@@ -4,7 +4,17 @@ import path from 'path';
 
 export async function createZip(directoryPath: string): Promise<Buffer> {
   const zip = new JSZip();
-  const files = await fs.readdir(directoryPath);
+  let files: string[] = [];
+  try {
+    files = await fs.readdir(directoryPath);
+  } catch (e) {
+    console.error(`Failed to read directory ${directoryPath}`, e);
+    return await zip.generateAsync({ type: 'nodebuffer' });
+  }
+
+  if (files.length === 0) {
+    console.warn(`Directory ${directoryPath} is empty`);
+  }
 
   for (const file of files) {
     const filePath = path.join(directoryPath, file);

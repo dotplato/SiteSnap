@@ -18,7 +18,11 @@ export async function POST(req: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         const sendProgress = (data: any) => {
-          controller.enqueue(encoder.encode(JSON.stringify(data) + '\n'));
+          try {
+            controller.enqueue(encoder.encode(JSON.stringify(data) + '\n'));
+          } catch (e) {
+            console.error('Failed to enqueue data:', e);
+          }
         };
 
         try {
@@ -34,7 +38,7 @@ export async function POST(req: NextRequest) {
           sendProgress({ status: 'progress', message: `Found ${urls.length} pages` });
 
           const jobId = Math.random().toString(36).substring(7);
-          const { tempDir } = await captureScreenshots(urls, { jobId }, (current, total) => {
+          const { tempDir, filePaths } = await captureScreenshots(urls, { jobId }, (current, total) => {
             sendProgress({ 
               status: 'progress', 
               message: `Capturing screenshot ${current} of ${total}`,
@@ -42,6 +46,12 @@ export async function POST(req: NextRequest) {
               total 
             });
           });
+
+          if (filePaths.length === 0) {
+            sendProgress({ status: 'error', message: 'Failed to capture any screenshots' });
+            controller.close();
+            return;
+          }
 
           sendProgress({ status: 'progress', message: 'Creating ZIP...' });
           const zipBuffer = await createZip(tempDir);
@@ -57,13 +67,11 @@ export async function POST(req: NextRequest) {
           await fs.rm(tempDir, { recursive: true, force: true }).catch(console.error);
         } catch (error: any) {
           console.error('Scan Error:', error);
-          let userMessage = error.message || 'An error occurred during scan';
-          if (error.message.includes('Executable doesn\'t exist')) {
-            userMessage = 'Server Error: Playwright browser not found. Try running "npx playwright install chromium" on the server.';
-          }
-          sendProgress({ status: 'error', message: userMessage });
+          sendProgress({ status: 'error', message: error.message || 'An error occurred during scan' });
         } finally {
-          controller.close();
+          try {
+            controller.close();
+          } catch (e) {}
         }
       },
     });
@@ -71,6 +79,8 @@ export async function POST(req: NextRequest) {
     return new Response(stream, {
       headers: {
         'Content-Type': 'application/x-ndjson',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
       },
     });
   } catch (error) {

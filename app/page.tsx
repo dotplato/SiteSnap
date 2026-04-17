@@ -38,32 +38,37 @@ export default function Home() {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
+        
+        // Handle NDJSON stream correctly
         const lines = buffer.split('\n');
+        // The last line might be incomplete, so keep it in the buffer
         buffer = lines.pop() || '';
 
         for (const line of lines) {
-          if (!line.trim()) continue;
+          const trimmedLine = line.trim();
+          if (!trimmedLine) continue;
+          
           try {
-            const data = JSON.parse(line);
+            const data = JSON.parse(trimmedLine);
             if (data.status === 'progress') {
               setProgress(data.message);
             } else if (data.status === 'complete') {
               setProgress(data.message);
               setZipData({ base64: data.zip, filename: data.filename });
               setIsScanning(false);
-              // Auto download
               downloadZip(data.zip, data.filename);
             } else if (data.status === 'error') {
-              throw new Error(data.message);
+              setError(data.message);
+              setIsScanning(false);
+              return; // Stop processing further lines
             }
           } catch (e: any) {
-            console.error('Failed to parse line:', line, e);
-            setError(e.message || 'Failed to process response');
-            setIsScanning(false);
+            console.error('Failed to parse line:', trimmedLine, e);
           }
         }
       }
     } catch (err: any) {
+      console.error('Scan fetch error:', err);
       setError(err.message || 'An unexpected error occurred');
       setIsScanning(false);
     }
