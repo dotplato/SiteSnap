@@ -4,10 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npx playwright install chromium && next build",
+    "build": "npm run playwright:install && next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "npx playwright install chromium"
+    "postinstall": "npm run playwright:install",
+    "playwright:install": "node scripts/install-playwright.cjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

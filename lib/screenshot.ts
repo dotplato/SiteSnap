@@ -4,6 +4,12 @@ import fs from 'fs/promises';
 import os from 'os';
 import { isHtmlDocumentContentType, isRenderablePageUrl } from '@/lib/page-url';
 
+// In serverless/container deploys, default cache paths may not exist at runtime.
+// We install Chromium into the project during build and force Playwright to read from there.
+if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
+  process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
+}
+
 export interface ScreenshotOptions {
   jobId: string;
   viewport?: { width: number; height: number };
