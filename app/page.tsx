@@ -4,6 +4,19 @@ import { useState } from 'react';
 import { Globe, Camera, FileArchive, CheckCircle, AlertCircle, Loader2, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+type StreamMessage = {
+  status: 'progress' | 'error' | 'complete';
+  message: string;
+  zip?: string;
+  filename?: string;
+  details?: Record<string, number>;
+};
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
+
 export default function Home() {
   const [url, setUrl] = useState('');
   const [isScanning, setIsScanning] = useState(false);
@@ -51,10 +64,13 @@ export default function Home() {
           if (!trimmedLine) continue;
           
           try {
-            const data = JSON.parse(trimmedLine);
+            const data = JSON.parse(trimmedLine) as StreamMessage;
             if (data.status === 'progress') {
               setProgress(data.message);
             } else if (data.status === 'complete') {
+              if (!data.zip || !data.filename) {
+                throw new Error('Invalid completion payload from server');
+              }
               setProgress(data.message);
               setZipData({ base64: data.zip, filename: data.filename });
               setIsScanning(false);
@@ -65,14 +81,14 @@ export default function Home() {
               setIsScanning(false);
               return; // Stop processing further lines
             }
-          } catch (e: any) {
+          } catch (e: unknown) {
             console.error('Failed to parse line:', trimmedLine, e);
           }
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Scan fetch error:', err);
-      setError(err.message || 'An unexpected error occurred');
+      setError(getErrorMessage(err, 'An unexpected error occurred'));
       setIsScanning(false);
     }
   };

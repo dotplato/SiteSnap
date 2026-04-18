@@ -16,6 +16,11 @@ type StreamPayload = {
   details?: Record<string, number>;
 };
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { url } = await req.json();
@@ -85,9 +90,9 @@ export async function POST(req: NextRequest) {
 
           // Cleanup
           await fs.rm(tempDir, { recursive: true, force: true }).catch(console.error);
-        } catch (error: any) {
+        } catch (error: unknown) {
           console.error('Scan Error:', error);
-          sendProgress({ status: 'error', message: error.message || 'An error occurred during scan' });
+          sendProgress({ status: 'error', message: getErrorMessage(error, 'An error occurred during scan') });
         } finally {
           try {
             controller.close();
