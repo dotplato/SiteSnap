@@ -9,6 +9,7 @@ export default function Home() {
   const [isScanning, setIsScanning] = useState(false);
   const [progress, setProgress] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<Record<string, number> | null>(null);
   const [zipData, setZipData] = useState<{ base64: string; filename: string } | null>(null);
 
   const startScan = async (e: React.FormEvent) => {
@@ -18,6 +19,7 @@ export default function Home() {
     setIsScanning(true);
     setProgress('Starting...');
     setError(null);
+    setErrorDetails(null);
     setZipData(null);
 
     try {
@@ -59,6 +61,7 @@ export default function Home() {
               downloadZip(data.zip, data.filename);
             } else if (data.status === 'error') {
               setError(data.message);
+              setErrorDetails(data.details ?? null);
               setIsScanning(false);
               return; // Stop processing further lines
             }
@@ -136,9 +139,16 @@ export default function Home() {
           {(isScanning || progress || error || zipData) && (
             <div className="mt-8 space-y-4 pt-6 border-t border-slate-100">
               {error ? (
-                <div className="flex items-center p-4 text-red-800 rounded-xl bg-red-50 border border-red-100">
-                  <AlertCircle className="flex-shrink-0 w-5 h-5 mr-3" />
-                  <p className="text-sm font-medium">{error}</p>
+                <div className="p-4 text-red-800 rounded-xl bg-red-50 border border-red-100 space-y-2">
+                  <div className="flex items-center">
+                    <AlertCircle className="shrink-0 w-5 h-5 mr-3" />
+                    <p className="text-sm font-medium">{error}</p>
+                  </div>
+                  {errorDetails && (
+                    <p className="text-xs text-red-700">
+                      Reasons: navigation failed {errorDetails.navigation_failed ?? 0}, non-HTML {errorDetails.skipped_non_html_document ?? 0}, HTTP errors {errorDetails.http_errors ?? 0}, filtered URLs {errorDetails.skipped_non_page_url ?? 0}, other {errorDetails.other_errors ?? 0}.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-4">

@@ -6,6 +6,16 @@ import fs from 'fs/promises';
 
 export const maxDuration = 300; // 5 minutes for long-running scans
 
+type StreamPayload = {
+  status: 'progress' | 'error' | 'complete';
+  message: string;
+  current?: number;
+  total?: number;
+  zip?: string;
+  filename?: string;
+  details?: Record<string, number>;
+};
+
 export async function POST(req: NextRequest) {
   try {
     const { url } = await req.json();
@@ -17,7 +27,7 @@ export async function POST(req: NextRequest) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
-        const sendProgress = (data: any) => {
+        const sendProgress = (data: StreamPayload) => {
           try {
             controller.enqueue(encoder.encode(JSON.stringify(data) + '\n'));
           } catch (e) {
@@ -38,7 +48,7 @@ export async function POST(req: NextRequest) {
           sendProgress({ status: 'progress', message: `Found ${urls.length} pages` });
 
           const jobId = Math.random().toString(36).substring(7);
-          const { tempDir, filePaths } = await captureScreenshots(urls, { jobId }, (current, total) => {
+          const { tempDir, filePaths, stats } = await captureScreenshots(urls, { jobId }, (current, total) => {
             sendProgress({ 
               status: 'progress', 
               message: `Capturing screenshot ${current} of ${total}`,
@@ -48,7 +58,17 @@ export async function POST(req: NextRequest) {
           });
 
           if (filePaths.length === 0) {
-            sendProgress({ status: 'error', message: 'Failed to capture any screenshots' });
+            sendProgress({
+              status: 'error',
+              message: `Failed to capture any screenshots. Attempted ${stats.attempted} page(s).`,
+              details: {
+                skipped_non_page_url: stats.skippedNonPageUrl,
+                skipped_non_html_document: stats.skippedNonHtmlDocument,
+                navigation_failed: stats.navigationFailed,
+                http_errors: stats.httpErrors,
+                other_errors: stats.otherErrors,
+              },
+            });
             controller.close();
             return;
           }

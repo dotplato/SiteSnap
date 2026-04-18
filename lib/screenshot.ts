@@ -15,6 +15,16 @@ export interface ScreenshotOptions {
   viewport?: { width: number; height: number };
 }
 
+export interface CaptureStats {
+  attempted: number;
+  captured: number;
+  skippedNonPageUrl: number;
+  skippedNonHtmlDocument: number;
+  navigationFailed: number;
+  httpErrors: number;
+  otherErrors: number;
+}
+
 /** Scroll the document so lazy-loaded images render; capped so broken/huge layouts cannot hang. */
 async function scrollForLazyContent(page: Page) {
   await page.evaluate(async () => {
@@ -37,17 +47,29 @@ async function scrollForLazyContent(page: Page) {
 
 async function createBrowser() {
   console.log('[Playwright] Launching browser...');
+  const isLinux = process.platform === 'linux';
   return await chromium.launch({
     headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--single-process',
-      '--no-zygote'
-    ],
+    // Keep args conservative. Aggressive flags like --single-process/--no-zygote
+    // can make Chromium unstable and lead to "Target ... has been closed".
+    args: isLinux
+      ? [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+        ]
+      : ['--disable-gpu'],
   });
+}
+
+async function gotoWithRetry(page: Page, url: string) {
+  try {
+    return await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  } catch (firstError) {
+    console.warn(`[Playwright] First navigation failed for ${url}, retrying once...`, firstError);
+    return await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  }
 }
 
 export async function captureScreenshots(urls: string[], options: ScreenshotOptions, onProgress?: (current: number, total: number) => void) {
@@ -60,6 +82,15 @@ export async function captureScreenshots(urls: string[], options: ScreenshotOpti
   let browser: Browser | null = null;
   let context: BrowserContext | null = null;
   const results: string[] = [];
+  const stats: CaptureStats = {
+    attempted: 0,
+    captured: 0,
+    skippedNonPageUrl: 0,
+    skippedNonHtmlDocument: 0,
+    navigationFailed: 0,
+    httpErrors: 0,
+    otherErrors: 0,
+  };
 
   try {
     browser = await createBrowser();
@@ -77,7 +108,11 @@ export async function captureScreenshots(urls: string[], options: ScreenshotOpti
         console.warn('[Playwright] Browser lost connection, re-launching...');
         if (browser) await browser.close().catch(() => {});
         browser = await createBrowser();
-        context = await browser.newContext({ viewport });
+        context = await browser.newContext({
+          viewport,
+          userAgent:
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        });
       }
 
       const page = await context.newPage();
@@ -86,14 +121,16 @@ export async function captureScreenshots(urls: string[], options: ScreenshotOpti
 
         if (!isRenderablePageUrl(url)) {
           console.warn(`[Playwright] Skipping non-page URL: ${url}`);
+          stats.skippedNonPageUrl += 1;
           continue;
         }
 
+        stats.attempted += 1;
         if (onProgress) onProgress(i + 1, urls.length);
         
         console.log(`[Playwright] Navigating to: ${url}`);
         // `load` often never fires on marketing/SPA sites (analytics, media, open sockets).
-        const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        const response = await gotoWithRetry(page, url);
         
         if (!response) {
           throw new Error(`No response from ${url}`);
@@ -103,6 +140,7 @@ export async function captureScreenshots(urls: string[], options: ScreenshotOpti
         console.log(`[Playwright] Navigation complete. Final URL: ${finalUrl} (Status: ${response.status()})`);
         
         if (response.status() >= 400) {
+          stats.httpErrors += 1;
           throw new Error(`HTTP Error ${response.status()} for ${url}`);
         }
 
@@ -114,6 +152,7 @@ export async function captureScreenshots(urls: string[], options: ScreenshotOpti
           console.warn(
             `[Playwright] Skipping non-HTML document (document.contentType=${docType || 'n/a'}) for ${url}`,
           );
+          stats.skippedNonHtmlDocument += 1;
           continue;
         }
         await scrollForLazyContent(page);
@@ -133,14 +172,22 @@ export async function captureScreenshots(urls: string[], options: ScreenshotOpti
         await page.screenshot({ path: filePath, fullPage: true });
         
         // Verify file exists and has size
-        const stats = await fs.stat(filePath);
-        if (stats.size > 0) {
-          console.log(`[Playwright] Screenshot saved successfully (${stats.size} bytes)`);
+        const fileStats = await fs.stat(filePath);
+        if (fileStats.size > 0) {
+          console.log(`[Playwright] Screenshot saved successfully (${fileStats.size} bytes)`);
           results.push(filePath);
+          stats.captured += 1;
         } else {
           console.warn(`[Playwright] Screenshot file is empty for ${url}`);
+          stats.otherErrors += 1;
         }
       } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        if (message.includes('Navigation timeout') || message.includes('ERR_') || message.includes('No response')) {
+          stats.navigationFailed += 1;
+        } else if (!message.includes('HTTP Error')) {
+          stats.otherErrors += 1;
+        }
         console.error(`[Playwright] Error capturing screenshot for ${url}:`, e);
       } finally {
         await page.close().catch(() => {});
@@ -153,5 +200,5 @@ export async function captureScreenshots(urls: string[], options: ScreenshotOpti
     }
   }
 
-  return { tempDir, filePaths: results };
+  return { tempDir, filePaths: results, stats };
 }
